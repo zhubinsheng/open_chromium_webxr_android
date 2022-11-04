@@ -1,0 +1,20 @@
+diff --git a/third_party/openxr/BUILD.gn b/third_party/openxr/BUILD.gn
+index 0577fcfd1381a..71a9b1f8dd2b6 100644
+--- a/third_party/openxr/BUILD.gn
++++ b/third_party/openxr/BUILD.gn
+@@ -87,5 +87,15 @@ if (enable_openxr) {
+         "XR_USE_GRAPHICS_API_D3D11",
+       ]
+     }
++
++    if (is_linux) {
++      defines = [
++        "XRLOADER_DISABLE_EXCEPTION_HANDLING",
++        "XR_OS_LINUX",
++        "XR_USE_GRAPHICS_API_OPENGL",
++        "XR_USE_PLATFORM_XLIB",
++        "XR_USE_TIMESPEC",
++      ]
++    }
+   }
+ }

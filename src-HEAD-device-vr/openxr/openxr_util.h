@@ -5,7 +5,10 @@
 #ifndef DEVICE_VR_OPENXR_OPENXR_UTIL_H_
 #define DEVICE_VR_OPENXR_OPENXR_UTIL_H_
 
-#include <d3d11.h>
+
++#ifdef XR_USE_PLATFORM_WIN32
+ #include <d3d11.h>
++#endif
 #include <vector>
 
 #include "base/logging.h"

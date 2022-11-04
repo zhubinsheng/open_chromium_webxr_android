@@ -5,7 +5,44 @@
 #ifndef DEVICE_VR_OPENXR_OPENXR_EXTENSION_HELPER_H_
 #define DEVICE_VR_OPENXR_OPENXR_EXTENSION_HELPER_H_
 
-#include <d3d11.h>
++#ifdef XR_USE_GRAPHICS_API_D3D11
+ #include <d3d11.h>
++#endif
++
++#ifdef XR_USE_GRAPHICS_API_OPENGL
++#if defined(XR_USE_PLATFORM_XLIB) || defined(XR_USE_PLATFORM_XCB)
+
+
++//# include <GL/glx.h>
++
+
++//#include <X11/Xlib.h>
++//#include <X11/Xutil.h>
++//typedef struct __GLXcontextRec *GLXContext;
++//typedef XID GLXDrawable;
++//typedef struct __GLXFBConfigRec *GLXFBConfig;
++//#include "ui/gl/gl_bindings.h"
++
++using Display = struct _XDisplay;
++using Bool = int;
++using Status = int;
++using XID = unsigned long;
++using Colormap = XID;
++using Font = XID;
++using Pixmap = XID;
++using Window = XID;
++using GLXPixmap = XID;
++using GLXWindow = XID;
++using GLXDrawable = XID;
++using GLXPbuffer = XID;
++using GLXContextID = XID;
++using GLXContext = struct __GLXcontextRec*;
++using GLXFBConfig = struct __GLXFBConfigRec*;
+// +struct XVisualInfo;
+
++#endif  // (XR_USE_PLATFORM_XLIB || XR_USE_PLATFORM_XCB)
++#endif
+
 #include <vector>
 
 #include "base/logging.h"
@@ -17,9 +54,16 @@ namespace device {
 struct OpenXrExtensionMethods {
   OpenXrExtensionMethods();
   ~OpenXrExtensionMethods();
-  // D3D
-  PFN_xrGetD3D11GraphicsRequirementsKHR xrGetD3D11GraphicsRequirementsKHR{
-      nullptr};
+
+   // D3D
++  #ifdef XR_USE_GRAPHICS_API_D3D11
+   PFN_xrGetD3D11GraphicsRequirementsKHR xrGetD3D11GraphicsRequirementsKHR{
+       nullptr};
++  #endif
++  #ifdef XR_USE_GRAPHICS_API_OPENGL
++  PFN_xrGetOpenGLGraphicsRequirementsKHR xrGetOpenGLGraphicsRequirementsKHR{
++      nullptr};
++  #endif
 
   // Hand Tracking
   PFN_xrCreateHandTrackerEXT xrCreateHandTrackerEXT{nullptr};

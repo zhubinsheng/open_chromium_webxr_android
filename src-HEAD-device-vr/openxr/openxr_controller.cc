@@ -185,14 +185,18 @@ XrResult OpenXrController::Initialize(
   XrActionSetCreateInfo action_set_create_info = {
       XR_TYPE_ACTION_SET_CREATE_INFO};
 
-  errno_t error = strcpy_s(action_set_create_info.actionSetName,
-                           std::size(action_set_create_info.actionSetName),
-                           action_set_name.c_str());
-  DCHECK(!error);
-  error = strcpy_s(action_set_create_info.localizedActionSetName,
-                   std::size(action_set_create_info.localizedActionSetName),
-                   action_set_name.c_str());
-  DCHECK(!error);
+  // errno_t error = strcpy_s(action_set_create_info.actionSetName,
+  //                          std::size(action_set_create_info.actionSetName),
+  //                          action_set_name.c_str());
+  // DCHECK(!error);
+  // error = strcpy_s(action_set_create_info.localizedActionSetName,
+  //                  std::size(action_set_create_info.localizedActionSetName),
+  //                  action_set_name.c_str());
+  // DCHECK(!error);
+  strcpy(action_set_create_info.actionSetName, action_set_name.c_str());
++  strcpy(action_set_create_info.localizedActionSetName, action_set_name.c_str());
++  RETURN_IF_XR_FAILED(xrCreateActionSet(instance_, &action_set_create_info, &action_set_));
+
 
   RETURN_IF_XR_FAILED(
       xrCreateActionSet(instance_, &action_set_create_info, &action_set_));
@@ -620,14 +624,16 @@ XrResult OpenXrController::CreateAction(XrActionType type,
   XrActionCreateInfo action_create_info = {XR_TYPE_ACTION_CREATE_INFO};
   action_create_info.actionType = type;
 
-  errno_t error =
-      strcpy_s(action_create_info.actionName,
-               std::size(action_create_info.actionName), action_name.data());
-  DCHECK(error == 0);
-  error = strcpy_s(action_create_info.localizedActionName,
-                   std::size(action_create_info.localizedActionName),
-                   action_name.data());
-  DCHECK(error == 0);
+  // errno_t error =
+  //     strcpy_s(action_create_info.actionName,
+  //              std::size(action_create_info.actionName), action_name.data());
+  // DCHECK(error == 0);
+  // error = strcpy_s(action_create_info.localizedActionName,
+  //                  std::size(action_create_info.localizedActionName),
+  //                  action_name.data());
+  // DCHECK(error == 0);
+  +  strcpy(action_create_info.actionName, action_name.data());
++  strcpy(action_create_info.localizedActionName, action_name.data());
   return xrCreateAction(action_set_, &action_create_info, action);
 }
 

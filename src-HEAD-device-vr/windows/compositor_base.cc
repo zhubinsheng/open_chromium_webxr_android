@@ -121,7 +121,7 @@ void XRCompositorCommon::SubmitFrameDrawnIntoTexture(
   NOTREACHED();
 }
 
-#if BUILDFLAG(IS_WIN)
+// #if BUILDFLAG(IS_WIN)
 void XRCompositorCommon::SubmitFrameWithTextureHandle(
     int16_t frame_index,
     mojo::PlatformHandle texture_handle,
@@ -147,6 +147,7 @@ void XRCompositorCommon::SubmitFrameWithTextureHandle(
   pending_frame_->waiting_for_webxr_ = false;
   pending_frame_->submit_frame_time_ = base::TimeTicks::Now();
 
++#if BUILDFLAG(IS_WIN)
   base::win::ScopedHandle scoped_handle = texture_handle.is_valid()
                                               ? texture_handle.TakeHandle()
                                               : base::win::ScopedHandle();
@@ -154,10 +155,11 @@ void XRCompositorCommon::SubmitFrameWithTextureHandle(
                                    left_webxr_bounds_, right_webxr_bounds_);
   pending_frame_->webxr_submitted_ = true;
 
++#endif
   // Regardless of success - try to composite what we have.
   MaybeCompositeAndSubmit();
 }
-#endif
+// #endif
 
 void XRCompositorCommon::CleanUp() {
   submit_client_.reset();
@@ -305,7 +307,7 @@ void XRCompositorCommon::StartRuntimeFinish(
       FROM_HERE, base::BindOnce(std::move(callback), true, std::move(session)));
   is_presenting_ = true;
 
-  texture_helper_.SetSourceAndOverlayVisible(webxr_visible_, overlay_visible_);
+  // texture_helper_.SetSourceAndOverlayVisible(webxr_visible_, overlay_visible_);
 }
 
 void XRCompositorCommon::ExitPresent(ExitXrPresentReason reason) {
@@ -327,7 +329,7 @@ void XRCompositorCommon::ExitPresent(ExitXrPresentReason reason) {
   overlay_visible_ = false;
   overlay_receiver_.reset();
 
-  texture_helper_.SetSourceAndOverlayVisible(false, false);
+  // texture_helper_.SetSourceAndOverlayVisible(false, false);
 
   // Don't call StopRuntime until this thread has finished the rest of the work.
   // This is to prevent the OpenXrApiWrapper from being deleted before its
@@ -550,7 +552,7 @@ void XRCompositorCommon::SetOverlayAndWebXRVisibility(bool overlay_visible,
   }
 
   // Update texture helper.
-  texture_helper_.SetSourceAndOverlayVisible(webxr_visible, overlay_visible);
+  // texture_helper_.SetSourceAndOverlayVisible(webxr_visible, overlay_visible);
 
   // Maybe composite and submit if we have a pending that is now valid to
   // submit.
@@ -591,10 +593,12 @@ void XRCompositorCommon::MaybeCompositeAndSubmit() {
   // requests.
   if (no_submit) {
     copy_successful = false;
-    texture_helper_.CleanupNoSubmit();
+    // texture_helper_.CleanupNoSubmit();
   } else {
-    copy_successful = texture_helper_.UpdateBackbufferSizes() &&
-                      texture_helper_.CompositeToBackBuffer();
+    // copy_successful = texture_helper_.UpdateBackbufferSizes() &&
+                      // texture_helper_.CompositeToBackBuffer();
++    copy_successful = true;
+    
     if (copy_successful) {
       pending_frame_->frame_ready_time_ = base::TimeTicks::Now();
       if (!SubmitCompositedFrame()) {

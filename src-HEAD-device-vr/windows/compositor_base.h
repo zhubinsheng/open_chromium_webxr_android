@@ -134,11 +134,11 @@ class XRCompositorCommon : public base::Thread,
   // processes
   virtual bool IsUsingSharedImages() const;
 
-#if BUILDFLAG(IS_WIN)
+// #if BUILDFLAG(IS_WIN)
   void SubmitFrameWithTextureHandle(int16_t frame_index,
                                     mojo::PlatformHandle texture_handle,
                                     const gpu::SyncToken& sync_token) final;
-#endif
+// #endif
 
  private:
   // base::Thread overrides:

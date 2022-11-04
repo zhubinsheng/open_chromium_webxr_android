@@ -11,6 +11,10 @@
 #include <unordered_map>
 #include <vector>
 
++#include <stdio.h>
++#include <stdlib.h>
++#include <cstring>
+
 #include "base/memory/raw_ptr.h"
 #include "device/vr/openxr/openxr_interaction_profiles.h"
 #include "device/vr/openxr/openxr_path_helper.h"

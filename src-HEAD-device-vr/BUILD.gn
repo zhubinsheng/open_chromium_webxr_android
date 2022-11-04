@@ -187,6 +187,24 @@ if (enable_vr) {
         deps += [ ":directx_helpers" ]
       }
 
++      if (is_linux) {
++        libs = [ "GLX" ]
++        deps += [
++          "//ui/gfx/x",
++        ]
++      }
+
+       if (is_linux) {
+-        libs = [ "GLX" ]
++        libs = [ "GL", "GLX", "X11", ]
+         deps += [
++          "//ui/base/x",
+           "//ui/gfx/x",
++          "//ui/gl/init",
+         ]
+       }
+       
+
       sources += [
         "openxr/context_provider_callbacks.h",
         "openxr/openxr_anchor_manager.cc",

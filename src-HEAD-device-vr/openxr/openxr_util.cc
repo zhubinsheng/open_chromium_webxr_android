@@ -8,7 +8,9 @@
 
 #include "base/check_op.h"
 #include "base/version.h"
-#include "base/win/scoped_handle.h"
++#if BUILDFLAG(IS_WIN)
+ #include "base/win/scoped_handle.h"
++#endif
 #include "build/build_config.h"
 #include "components/version_info/version_info.h"
 #include "ui/gfx/geometry/angle_conversions.h"
@@ -94,11 +96,12 @@ XrResult CreateInstance(
 
   std::string application_name = version_info::GetProductName() + " " +
                                  version_info::GetMajorVersionNumber();
-  errno_t error =
-      strcpy_s(instance_create_info.applicationInfo.applicationName,
-               std::size(instance_create_info.applicationInfo.applicationName),
-               application_name.c_str());
-  DCHECK_EQ(error, 0);
+  // errno_t error =
+  //     strcpy_s(instance_create_info.applicationInfo.applicationName,
+  //              std::size(instance_create_info.applicationInfo.applicationName),
+  //              application_name.c_str());
+  // DCHECK_EQ(error, 0);
+  strcpy(instance_create_info.applicationInfo.applicationName, application_name.c_str());
 
   base::Version version = version_info::GetVersion();
   DCHECK_EQ(version.components().size(), 4uLL);
@@ -107,10 +110,11 @@ XrResult CreateInstance(
   // application version will be the build number of each vendor
   instance_create_info.applicationInfo.applicationVersion = build;
 
-  error = strcpy_s(instance_create_info.applicationInfo.engineName,
-                   std::size(instance_create_info.applicationInfo.engineName),
-                   "Chromium");
-  DCHECK_EQ(error, 0);
+  // error = strcpy_s(instance_create_info.applicationInfo.engineName,
+  //                  std::size(instance_create_info.applicationInfo.engineName),
+  //                  "Chromium");
+  // DCHECK_EQ(error, 0);
++  strcpy(instance_create_info.applicationInfo.engineName, "Chromium");
 
   // engine version should be the build number of chromium
   instance_create_info.applicationInfo.engineVersion = build;
@@ -125,6 +129,14 @@ XrResult CreateInstance(
   // the XR_KHR_D3D11_ENABLE_EXTENSION_NAME is required.
   std::vector<const char*> extensions{XR_KHR_D3D11_ENABLE_EXTENSION_NAME};
 
++  std::vector<const char*> extensions;
++#ifdef XR_USE_GRAPHICS_API_D3D11
++  extensions.push_back(XR_KHR_D3D11_ENABLE_EXTENSION_NAME);
++#endif
++#ifdef XR_USE_GRAPHICS_API_OPENGL
++  extensions.push_back(XR_KHR_OPENGL_ENABLE_EXTENSION_NAME);
++#endif
+
   // If we are in an app container, we must require the app container extension
   // to ensure robust execution of the OpenXR runtime
   if (IsRunningInWin32AppContainer()) {
@@ -137,7 +149,12 @@ XrResult CreateInstance(
   auto EnableExtensionIfSupported = [&extension_enumeration,
                                      &extensions](const char* extension) {
     if (extension_enumeration.ExtensionSupported(extension)) {
-      extensions.push_back(extension);
+      // -      extensions.push_back(extension);
++      (void)extensions;
++      // FIXME: Don't enable extensions for now
++      //extensions.push_back(extension);
++      DLOG(INFO) << "Wanted to enable extension " << extension << " but surpressed";
+
     }
   };
 
@@ -170,6 +187,11 @@ XrResult CreateInstance(
   instance_create_info.enabledExtensionCount =
       static_cast<uint32_t>(extensions.size());
   instance_create_info.enabledExtensionNames = extensions.data();
+
++  LOG(INFO) << "Enabling " << instance_create_info.enabledExtensionCount << "extensions";
++  for(auto *extension : extensions) {
++    LOG(INFO) << "\t" << extension;
++  }
 
   return xrCreateInstance(&instance_create_info, instance);
 }

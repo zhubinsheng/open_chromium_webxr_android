@@ -5,7 +5,9 @@
 #ifndef DEVICE_VR_OPENXR_OPENXR_STATICS_H_
 #define DEVICE_VR_OPENXR_OPENXR_STATICS_H_
 
-#include <d3d11.h>
++#ifdef XR_USE_GRAPHICS_API_D3D11
+ #include <d3d11.h>
++#endif
 
 #include "base/memory/singleton.h"
 #include "build/build_config.h"

@@ -5,7 +5,12 @@
 #ifndef DEVICE_VR_OPENXR_OPENXR_API_WRAPPER_H_
 #define DEVICE_VR_OPENXR_OPENXR_API_WRAPPER_H_
 
-#include <d3d11_4.h>
++#ifdef XR_USE_GRAPHICS_API_D3D11
+ #include <d3d11_4.h>
+ #include <wrl.h>
++#endif
+
+
 #include <stdint.h>
 #include <wrl.h>
 #include <memory>
@@ -63,7 +68,10 @@ class OpenXrApiWrapper {
 
   XrResult InitSession(
       const std::unordered_set<mojom::XRSessionFeature>& enabled_features,
+      +#ifdef XR_USE_GRAPHICS_API_D3D11
       const Microsoft::WRL::ComPtr<ID3D11Device>& d3d_device,
+      +#endif
+
       const OpenXrExtensionHelper& extension_helper,
       SessionStartedCallback on_session_started_callback,
       SessionEndedCallback on_session_ended_callback,
@@ -71,9 +79,14 @@ class OpenXrApiWrapper {
 
   XrSpace GetReferenceSpace(device::mojom::XRReferenceSpaceType type) const;
 
++#ifdef XR_USE_GRAPHICS_API_D3D11
   XrResult BeginFrame(Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
                       gpu::MailboxHolder& mailbox_holder);
++#else
++  XrResult BeginFrame();
++#endif
   XrResult EndFrame();
+
   bool HasPendingFrame() const;
   bool HasFrameState() const;
 
@@ -85,8 +98,12 @@ class OpenXrApiWrapper {
   std::vector<mojom::XRViewPtr> GetDefaultViews() const;
   gfx::Size GetSwapchainSize() const;
   XrTime GetPredictedDisplayTime() const;
+
++#ifdef XR_USE_GRAPHICS_API_D3D11
   XrResult GetLuid(const OpenXrExtensionHelper& extension_helper,
                    LUID& luid) const;
++#endif
+
   bool GetStageParameters(XrExtent2Df& stage_bounds,
                           gfx::Transform& local_from_stage);
   bool StageParametersEnabled() const;
@@ -107,8 +124,11 @@ class OpenXrApiWrapper {
   bool IsUsingSharedImages() const;
 
   static void DEVICE_VR_EXPORT SetTestHook(VRTestHook* hook);
+  
++#ifdef XR_USE_GRAPHICS_API_D3D11
   void StoreFence(Microsoft::WRL::ComPtr<ID3D11Fence> d3d11_fence,
                   int16_t frame_index);
++#endif
 
  private:
   void Reset();
@@ -126,7 +146,10 @@ class OpenXrApiWrapper {
   void EnsureEventPolling();
 
   XrResult CreateSession(
-      const Microsoft::WRL::ComPtr<ID3D11Device>& d3d_device);
+    +#ifdef XR_USE_GRAPHICS_API_D3D11
++      const Microsoft::WRL::ComPtr<ID3D11Device>& d3d_device
++#endif
+    );
   XrResult CreateSwapchain();
   bool RecomputeSwapchainSizeAndViewports();
   XrResult CreateSpace(XrReferenceSpaceType type, XrSpace* space);
@@ -202,14 +225,31 @@ class OpenXrApiWrapper {
   // When shared images are being used, there is a corresponding MailboxHolder
   // and D3D11Fence for each D3D11 texture in the vector.
   struct SwapChainInfo {
-    explicit SwapChainInfo(ID3D11Texture2D*);
+    +#ifdef XR_USE_GRAPHICS_API_D3D11
+     explicit SwapChainInfo(ID3D11Texture2D*);
+    +#endif
+
++#ifdef XR_USE_GRAPHICS_API_OPENGL
++    explicit SwapChainInfo(uint32_t);
+ #endif
+
     ~SwapChainInfo();
     SwapChainInfo(SwapChainInfo&&);
 
     void Clear();
 
-    raw_ptr<ID3D11Texture2D> d3d11_texture = nullptr;
-    gpu::MailboxHolder mailbox_holder;
++#ifdef XR_USE_GRAPHICS_API_D3D11
+     raw_ptr<ID3D11Texture2D> d3d11_texture = nullptr;
+-    gpu::MailboxHolder mailbox_holder;
+     Microsoft::WRL::ComPtr<ID3D11Fence> d3d11_fence;
++#endif
+
++#ifdef XR_USE_GRAPHICS_API_OPENGL
++    uint32_t gl_image; // OpenGL image handle
+ #endif
+ 
++    gpu::MailboxHolder mailbox_holder;
+
     Microsoft::WRL::ComPtr<ID3D11Fence> d3d11_fence;
   };
 

@@ -4,7 +4,9 @@
 
 #include "device/vr/openxr/openxr_render_loop.h"
 
-#include <d3d11_4.h>
++#ifdef XR_USE_GRAPHICS_API_D3D11
+ #include <d3d11_4.h>
++#endif
 
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
@@ -50,6 +52,7 @@ mojom::XRFrameDataPtr OpenXrRenderLoop::GetNextFrameData() {
   mojom::XRFrameDataPtr frame_data = mojom::XRFrameData::New();
   frame_data->frame_id = next_frame_id_;
 
++#ifdef XR_USE_GRAPHICS_API_D3D11
   Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
   gpu::MailboxHolder mailbox_holder;
   if (XR_FAILED(openxr_->BeginFrame(texture, mailbox_holder))) {
@@ -60,6 +63,11 @@ mojom::XRFrameDataPtr OpenXrRenderLoop::GetNextFrameData() {
   if (!mailbox_holder.mailbox.IsZero()) {
     frame_data->buffer_holder = mailbox_holder;
   }
+  +#else
++  if (XR_FAILED(openxr_->BeginFrame())) {
++    return frame_data;
++  }
++#endif
 
   frame_data->time_delta =
       base::Nanoseconds(openxr_->GetPredictedDisplayTime());
@@ -132,6 +140,7 @@ void OpenXrRenderLoop::StartRuntime(
   VisibilityChangedCallback on_visibility_state_changed = base::BindRepeating(
       &OpenXrRenderLoop::SetVisibilityState, weak_ptr_factory_.GetWeakPtr());
 
++#ifdef XR_USE_GRAPHICS_API_D3D11
   texture_helper_.SetUseBGRA(true);
   LUID luid;
   if (XR_FAILED(openxr_->GetLuid(extension_helper_, luid)) ||
@@ -145,6 +154,20 @@ void OpenXrRenderLoop::StartRuntime(
     ExitPresent(ExitXrPresentReason::kStartRuntimeFailed);
     std::move(start_runtime_split_callback.second).Run(false);
   }
+
+-#endif
+-#ifdef XR_USE_GRAPHICS_API_OPENGL
++#else
++  if(XR_FAILED(openxr_->InitSession(
++          enabled_features_, extension_helper_,
++          std::move(on_session_started_callback),
++          std::move(on_session_ended_callback),
++          std::move(on_visibility_state_changed)))) {
++    ExitPresent();
++    std::move(start_runtime_split_callback.second).Run(false);
++  }
++#endif
+
 }
 
 void OpenXrRenderLoop::OnOpenXrSessionStarted(
@@ -156,7 +179,9 @@ void OpenXrRenderLoop::OnOpenXrSessionStarted(
     return;
   }
 
-  texture_helper_.SetDefaultSize(openxr_->GetSwapchainSize());
++#ifdef XR_USE_GRAPHICS_API_D3D11
+   texture_helper_.SetDefaultSize(openxr_->GetSwapchainSize());
++#endif
 
   StartContextProviderIfNeeded(std::move(start_runtime_callback));
 }
@@ -166,7 +191,11 @@ void OpenXrRenderLoop::StopRuntime() {
   // first, input_helper_destructor will try to call the actual openxr runtime
   // rather than the mock in tests.
   openxr_ = nullptr;
-  texture_helper_.Reset();
+  // texture_helper_.Reset();
+  +#ifdef XR_USE_GRAPHICS_API_D3D11
+   texture_helper_.Reset();
++#endif
+
   context_provider_.reset();
 }
 
@@ -282,6 +311,7 @@ void OpenXrRenderLoop::OnWebXrTokenSignaled(
     return;
   }
 
++#ifdef XR_USE_GRAPHICS_API_D3D11
   Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device =
       texture_helper_.GetDevice();
   Microsoft::WRL::ComPtr<ID3D11Device5> d3d11_device5;
@@ -321,6 +351,8 @@ void OpenXrRenderLoop::OnWebXrTokenSignaled(
   SubmitFrameWithTextureHandle(frame_index, mojo::PlatformHandle(),
                                gpu::SyncToken());
 
++#endif
+
   // Calling SubmitFrameWithTextureHandle can cause openxr_ and
   // context_provider_ to become nullptr in ClearPendingFrameInternal if we
   // decide to stop the runtime.
@@ -329,7 +361,10 @@ void OpenXrRenderLoop::OnWebXrTokenSignaled(
     // around until the next time the texture comes up for use. To avoid needing
     // to remember the swap chain index, use frame_index %
     // color_swapchain_images_.size() to keep them separated from one another.
-    openxr_->StoreFence(std::move(d3d11_fence), frame_index);
+    // openxr_->StoreFence(std::move(d3d11_fence), frame_index);
+    +#ifdef XR_USE_GRAPHICS_API_D3D11
+     openxr_->StoreFence(std::move(d3d11_fence), frame_index);
++#endif
   }
   if (context_provider_) {
     gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();

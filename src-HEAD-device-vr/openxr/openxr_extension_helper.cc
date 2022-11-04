@@ -44,12 +44,23 @@ OpenXrExtensionHelper::OpenXrExtensionHelper(
     : extension_enumeration_(extension_enumeration) {
   // Failure to query a method results in a nullptr
 
-  // D3D11
-  std::ignore = xrGetInstanceProcAddr(
-      instance, "xrGetD3D11GraphicsRequirementsKHR",
-      reinterpret_cast<PFN_xrVoidFunction*>(
-          const_cast<PFN_xrGetD3D11GraphicsRequirementsKHR*>(
-              &extension_methods_.xrGetD3D11GraphicsRequirementsKHR)));
+   // D3D11
++  #ifdef XR_USE_GRAPHICS_API_D3D11
+   std::ignore = xrGetInstanceProcAddr(
+       instance, "xrGetD3D11GraphicsRequirementsKHR",
+       reinterpret_cast<PFN_xrVoidFunction*>(
+           const_cast<PFN_xrGetD3D11GraphicsRequirementsKHR*>(
+               &extension_methods_.xrGetD3D11GraphicsRequirementsKHR)));
++  #endif
++
++  // OpenGL
++  #ifdef XR_USE_GRAPHICS_API_OPENGL
++  std::ignore = xrGetInstanceProcAddr(
++      instance, "xrGetOpenGLGraphicsRequirementsKHR",
++      reinterpret_cast<PFN_xrVoidFunction*>(
++          const_cast<PFN_xrGetOpenGLGraphicsRequirementsKHR*>(
++              &extension_methods_.xrGetOpenGLGraphicsRequirementsKHR)));
++  #endif
 
   // Hand tracking methods
   std::ignore = xrGetInstanceProcAddr(

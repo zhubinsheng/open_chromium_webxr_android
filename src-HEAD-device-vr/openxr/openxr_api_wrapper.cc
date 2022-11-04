@@ -3,8 +3,18 @@
 // found in the LICENSE file.
 
 #include "device/vr/openxr/openxr_api_wrapper.h"
++#include "openxr_api_wrapper.h"
 
-#include <dxgi1_2.h>
+
++#ifdef XR_USE_GRAPHICS_API_D3D11
+ #include <dxgi1_2.h>
++#include "gpu/ipc/common/gpu_memory_buffer_impl_dxgi.h"
++#endif
+
++#ifdef XR_USE_GRAPHICS_API_OPENGL
++// #include <GL/glx.h>
++#endif
+
 #include <stdint.h>
 #include <algorithm>
 #include <array>
@@ -20,15 +30,32 @@
 #include "device/vr/openxr/openxr_input_helper.h"
 #include "device/vr/openxr/openxr_util.h"
 #include "device/vr/test/test_hook.h"
-#include "gpu/GLES2/gl2extchromium.h"
+// #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
-#include "gpu/ipc/common/gpu_memory_buffer_impl_dxgi.h"
 #include "ui/gfx/geometry/angle_conversions.h"
 #include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/quaternion.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/transform.h"
+
+
+-//#include "ui/gl/gl_surface_glx.h"
++#include "ui/gl/gl_surface_glx.h"
++#include "ui/gl/gl_surface_glx_x11.h"
+ #include "ui/gfx/x/xproto_util.h"
++#include "ui/base/x/visual_picker_glx.h"
++#include "ui/gl/gl_context.h"
+ #include "ui/gl/glx_util.h"
++#include "ui/gl/gl_utils.h"
++#include "ui/gl/init/gl_factory.h"
++#include "ui/gl/gl_context_glx.h"
+ #include <GL/gl.h>
+ #include <GL/glext.h>
+-#define GLX_GLXEXT_PROTOTYPES 1
++#include <GL/glx.h>
+ #include <GL/glxext.h>
+ #include <GL/glxtokens.h>
 
 namespace device {
 
@@ -123,8 +150,16 @@ std::unique_ptr<OpenXrApiWrapper> OpenXrApiWrapper::Create(
   return openxr;
 }
 
-OpenXrApiWrapper::SwapChainInfo::SwapChainInfo(ID3D11Texture2D* d3d11_texture)
-    : d3d11_texture(d3d11_texture) {}
++#ifdef XR_USE_PLATFORM_WIN32
+ OpenXrApiWrapper::SwapChainInfo::SwapChainInfo(ID3D11Texture2D* d3d11_texture)
+     : d3d11_texture(d3d11_texture) {}
++#endif
+
++#ifdef XR_USE_GRAPHICS_API_OPENGL
++OpenXrApiWrapper::SwapChainInfo::SwapChainInfo(uint32_t gl_image)
++    : gl_image(gl_image) {}
++#endif
+
 OpenXrApiWrapper::SwapChainInfo::~SwapChainInfo() {
   // If shared images are being used, the mailbox holder should have been
   // cleared before destruction, either due to the context provider being lost
@@ -429,12 +464,16 @@ OpenXrApiWrapper::GetOrCreateSceneUnderstandingManager(
 // objects that may have been created before the failure.
 XrResult OpenXrApiWrapper::InitSession(
     const std::unordered_set<mojom::XRSessionFeature>& enabled_features,
-    const Microsoft::WRL::ComPtr<ID3D11Device>& d3d_device,
+    +#ifdef XR_USE_GRAPHICS_API_D3D11
+     const Microsoft::WRL::ComPtr<ID3D11Device>& d3d_device,
+    +#endif
     const OpenXrExtensionHelper& extension_helper,
     SessionStartedCallback on_session_started_callback,
     SessionEndedCallback on_session_ended_callback,
     VisibilityChangedCallback visibility_changed_callback) {
-  DCHECK(d3d_device.Get());
+  +#ifdef XR_USE_GRAPHICS_API_D3D11
+   DCHECK(d3d_device.Get());
+  +#endif
   DCHECK(IsInitialized());
 
   enabled_features_ = enabled_features;
@@ -452,7 +491,18 @@ XrResult OpenXrApiWrapper::InitSession(
   on_session_ended_callback_ = std::move(on_session_ended_callback);
   visibility_changed_callback_ = std::move(visibility_changed_callback);
 
-  RETURN_IF_XR_FAILED(CreateSession(d3d_device));
+  +#ifdef XR_USE_GRAPHICS_API_D3D11
+   RETURN_IF_XR_FAILED(CreateSession(d3d_device));
+  +#else
+
+  +  // Need to request OpenGL requirements for session
++  XrGraphicsRequirementsOpenGLKHR opengl_reqs = {.type = XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR, .next = NULL};
++  extension_helper.ExtensionMethods().xrGetOpenGLGraphicsRequirementsKHR(instance_, system_, &opengl_reqs);
++
+
+  +  RETURN_IF_XR_FAILED(CreateSession());
+  +#endif
+
   RETURN_IF_XR_FAILED(CreateSwapchain());
   RETURN_IF_XR_FAILED(
       CreateSpace(XR_REFERENCE_SPACE_TYPE_LOCAL, &local_space_));
@@ -485,22 +535,98 @@ XrResult OpenXrApiWrapper::InitSession(
   return XR_SUCCESS;
 }
 
-XrResult OpenXrApiWrapper::CreateSession(
-    const Microsoft::WRL::ComPtr<ID3D11Device>& d3d_device) {
-  DCHECK(d3d_device.Get());
-  DCHECK(!HasSession());
-  DCHECK(IsInitialized());
 
-  XrGraphicsBindingD3D11KHR d3d11_binding = {
-      XR_TYPE_GRAPHICS_BINDING_D3D11_KHR};
-  d3d11_binding.device = d3d_device.Get();
++//#ifdef XR_USE_GRAPHICS_API_OPENGL
++typedef GLXContext (*glXCreateContextAttribsARBProc)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
++XrResult OpenXrApiWrapper::CreateSession() {
++  DCHECK(!HasSession());
++  DCHECK(IsInitialized());
++
 
-  XrSessionCreateInfo session_create_info = {XR_TYPE_SESSION_CREATE_INFO};
-  session_create_info.next = &d3d11_binding;
-  session_create_info.systemId = system_;
+//
++  Display* display = XOpenDisplay(0);
++  LOG(INFO) << "DisplayX11 = " << display << " vs " << XOpenDisplay(0);
++
++  static int visual_attribs[] = {
++    GLX_RENDER_TYPE, GLX_RGBA_BIT,
++    GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
++    GLX_DOUBLEBUFFER, true,
++    0
++  };
++
++  int num_fbc = 0;
++  GLXFBConfig *fbc = glXChooseFBConfig(display, DefaultScreen(display), visual_attribs, &num_fbc);
++  if (!fbc) {
++      LOG(INFO) << "glXChooseFBConfig() failed";
++  }
++
++  XVisualInfo *vi = glXGetVisualFromFBConfig(display, fbc[0]);
++
++  XSetWindowAttributes swa;
++  LOG(INFO) << "Creating colormap";
++  swa.colormap = XCreateColormap(display, RootWindow(display, vi->screen), vi->visual, AllocNone);
++  swa.border_pixel = 0;
++  swa.event_mask = StructureNotifyMask;
++
++  LOG(INFO) << "Creating window";
++  Window win = XCreateWindow(display, RootWindow(display, vi->screen), 0, 0, 100, 100, 0, vi->depth, InputOutput, vi->visual, CWBorderPixel|CWColormap|CWEventMask, &swa);
++  DCHECK(win);
++  XMapWindow(display, win);
++
++  LOG(INFO) << "Creating GLX Context";
++  GLXContext ctx_old = glXCreateContext(display, vi, 0, GL_TRUE);
++  LOG(INFO) << "GLX Context = " << ctx_old;
++  glXCreateContextAttribsARBProc glXCreateContextAttribsARB =  (glXCreateContextAttribsARBProc)glXGetProcAddress((const GLubyte*)"glXCreateContextAttribsARB");
++  glXMakeCurrent(display, 0, 0);
++  glXDestroyContext(display, ctx_old);
++  DCHECK(glXCreateContextAttribsARB);
++
++  // New style
++  static int context_attribs[] =
++  {
++      GLX_CONTEXT_MAJOR_VERSION_ARB, 4,
++      GLX_CONTEXT_MINOR_VERSION_ARB, 6,
++      GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
++      GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
++      None
++  };
++  GLXContext ctx = glXCreateContextAttribsARB(display, fbc[0], NULL, true, context_attribs);
++  LOG(INFO) << "GLX Context = " << ctx;
++  auto res = glXMakeCurrent(display, win, ctx);
++  LOG(INFO) << "Make current = " << res;
++
++  int visualid;
++  glXGetFBConfigAttrib(display, fbc[0], GLX_VISUAL_ID, &visualid);
++  LOG(INFO) << "VisualID = " << visualid << " not " << vi->visualid;
++
++  // TODO
++  XrGraphicsBindingOpenGLXlibKHR gl_binding {
++    .type = XR_TYPE_GRAPHICS_BINDING_OPENGL_XLIB_KHR,
++    .xDisplay = display,
++    .visualid = (uint32_t)vi->visualid,
++    .glxFBConfig = fbc[0],
++    .glxDrawable = (GLXDrawable)win,
++    .glxContext = ctx,
++  };
+ 
++  GLint majVers = 0, minVers = 0;
++  glGetIntegerv(GL_MAJOR_VERSION, &majVers);
++  glGetIntegerv(GL_MINOR_VERSION, &minVers);
++  LOG(INFO) << "Running GL version " << majVers << "." << minVers;
 
-  return xrCreateSession(instance_, &session_create_info, &session_);
-}
+
+
++  XrSessionCreateInfo session_create_info = {XR_TYPE_SESSION_CREATE_INFO};
++  session_create_info.next = &gl_binding;
++  session_create_info.systemId = system_;
++
+-  return xrCreateSession(instance_, &session_create_info, &session_);
++  XrResult xrResult = xrCreateSession(instance_, &session_create_info, &session_);
++  LOG(INFO) << "xrCreateSession result = " << xrResult;
++  return xrResult;
+
++}
+// +#endif
 
 XrResult OpenXrApiWrapper::CreateSwapchain() {
   DCHECK(IsInitialized());
@@ -519,12 +645,24 @@ XrResult OpenXrApiWrapper::CreateSwapchain() {
   // Therefore, the content in this openxr swapchain image is in sRGB format.
   swapchain_create_info.format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 
++  swapchain_create_info.width = swapchain_size_.width();
++  swapchain_create_info.height = swapchain_size_.height();
++  swapchain_create_info.mipCount = 1;
++  swapchain_create_info.faceCount = 1;
++  swapchain_create_info.sampleCount = GetRecommendedSwapchainSampleCount();
++  swapchain_create_info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
++#else
++  swapchain_create_info.format = GL_SRGB8_ALPHA8;
+
   swapchain_create_info.width = swapchain_size_.width();
   swapchain_create_info.height = swapchain_size_.height();
   swapchain_create_info.mipCount = 1;
+
+  +#ifdef XR_USE_GRAPHICS_API_D3D11
   swapchain_create_info.faceCount = 1;
   swapchain_create_info.sampleCount = GetRecommendedSwapchainSampleCount();
   swapchain_create_info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
++#endif
 
   XrSwapchain color_swapchain;
   RETURN_IF_XR_FAILED(
@@ -534,8 +672,14 @@ XrResult OpenXrApiWrapper::CreateSwapchain() {
   RETURN_IF_XR_FAILED(
       xrEnumerateSwapchainImages(color_swapchain, 0, &chain_length, nullptr));
 
-  std::vector<XrSwapchainImageD3D11KHR> color_swapchain_images(
-      chain_length, {XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR});
++#ifdef XR_USE_GRAPHICS_API_D3D11
+   std::vector<XrSwapchainImageD3D11KHR> color_swapchain_images(
+       chain_length, {XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR});
++#endif
++#ifdef XR_USE_GRAPHICS_API_OPENGL
++  std::vector<XrSwapchainImageOpenGLKHR> color_swapchain_images(
++      chain_length, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
++#endif
 
   RETURN_IF_XR_FAILED(xrEnumerateSwapchainImages(
       color_swapchain, color_swapchain_images.size(), &chain_length,
@@ -547,7 +691,8 @@ XrResult OpenXrApiWrapper::CreateSwapchain() {
   color_swapchain_images_.reserve(color_swapchain_images.size());
   for (const auto& swapchain_image : color_swapchain_images) {
     color_swapchain_images_.emplace_back(
-        SwapChainInfo{swapchain_image.texture});
+-        SwapChainInfo{swapchain_image.texture});
++        SwapChainInfo{swapchain_image.image});
   }
 
   CreateSharedMailboxes();
@@ -697,9 +842,13 @@ void OpenXrApiWrapper::CreateSharedMailboxes() {
 
   gpu::SharedImageInterface* shared_image_interface =
       context_provider_->SharedImageInterface();
++  (void)shared_image_interface;
 
   // Create the MailboxHolders for each texture in the swap chain
   for (SwapChainInfo& swap_chain_info : color_swapchain_images_) {
+    +    (void)swap_chain_info;
++#ifdef XR_USE_GRAPHICS_API_D3D11
+
     Microsoft::WRL::ComPtr<IDXGIResource1> dxgi_resource;
     HRESULT hr = swap_chain_info.d3d11_texture->QueryInterface(
         IID_PPV_ARGS(&dxgi_resource));
@@ -757,6 +906,8 @@ void OpenXrApiWrapper::CreateSharedMailboxes() {
         kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType, shared_image_usage);
     mailbox_holder.sync_token = shared_image_interface->GenVerifiedSyncToken();
     mailbox_holder.texture_target = GL_TEXTURE_2D;
+
+    +#endif
   }
 }
 
@@ -765,6 +916,7 @@ bool OpenXrApiWrapper::IsUsingSharedImages() const {
           !color_swapchain_images_[0].mailbox_holder.mailbox.IsZero());
 }
 
++#ifdef XR_USE_GRAPHICS_API_D3D11
 void OpenXrApiWrapper::StoreFence(
     Microsoft::WRL::ComPtr<ID3D11Fence> d3d11_fence,
     int16_t frame_index) {
@@ -774,6 +926,7 @@ void OpenXrApiWrapper::StoreFence(
         std::move(d3d11_fence);
   }
 }
++#endif
 
 XrResult OpenXrApiWrapper::CreateSpace(XrReferenceSpaceType type,
                                        XrSpace* space) {
@@ -820,6 +973,7 @@ XrResult OpenXrApiWrapper::BeginSession() {
   return xr_result;
 }
 
++#ifdef XR_USE_GRAPHICS_API_D3D11
 XrResult OpenXrApiWrapper::BeginFrame(
     Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
     gpu::MailboxHolder& mailbox_holder) {
@@ -828,6 +982,9 @@ XrResult OpenXrApiWrapper::BeginFrame(
 
   if (!session_running_)
     return XR_ERROR_SESSION_NOT_RUNNING;
+
++  DLOG(INFO) << ">>>>>>>>>>>>>>>>> BeginFrame";
+
 
   XrFrameWaitInfo wait_frame_info = {XR_TYPE_FRAME_WAIT_INFO};
   XrFrameState frame_state = {XR_TYPE_FRAME_STATE};
@@ -880,6 +1037,70 @@ XrResult OpenXrApiWrapper::BeginFrame(
 
   return XR_SUCCESS;
 }
+
++#else
++XrResult OpenXrApiWrapper::BeginFrame() {
++  DCHECK(HasSession());
++  DCHECK(HasColorSwapChain());
++
++  if (!session_running_)
++    return XR_ERROR_SESSION_NOT_RUNNING;
++
++XrFrameWaitInfo wait_frame_info = {XR_TYPE_FRAME_WAIT_INFO};
++  XrFrameState frame_state = {XR_TYPE_FRAME_STATE};
++
++  XrSecondaryViewConfigurationFrameStateMSFT secondary_view_frame_states = {
++      XR_TYPE_SECONDARY_VIEW_CONFIGURATION_FRAME_STATE_MSFT};
++  std::vector<XrSecondaryViewConfigurationStateMSFT>
++      secondary_view_config_states;
++  if (base::Contains(enabled_features_,
++                     mojom::XRSessionFeature::SECONDARY_VIEWS)) {
++    secondary_view_config_states.resize(
++        secondary_view_configs_.size(),
++        {XR_TYPE_SECONDARY_VIEW_CONFIGURATION_STATE_MSFT});
++    secondary_view_frame_states.viewConfigurationCount =
++        secondary_view_config_states.size();
++    secondary_view_frame_states.viewConfigurationStates =
++        secondary_view_config_states.data();
++    frame_state.next = &secondary_view_frame_states;
++  }
++
++  RETURN_IF_XR_FAILED(xrWaitFrame(session_, &wait_frame_info, &frame_state));
++  frame_state_ = frame_state;
++
++  if (base::Contains(enabled_features_,
++                     mojom::XRSessionFeature::SECONDARY_VIEWS)) {
++    RETURN_IF_XR_FAILED(
++        UpdateSecondaryViewConfigStates(secondary_view_config_states));
++  }
++
++  XrFrameBeginInfo begin_frame_info = {XR_TYPE_FRAME_BEGIN_INFO};
++  RETURN_IF_XR_FAILED(xrBeginFrame(session_, &begin_frame_info));
++  pending_frame_ = true;
++
++  XrSwapchainImageAcquireInfo acquire_info = {
++      XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
++  uint32_t color_swapchain_image_index;
++  RETURN_IF_XR_FAILED(xrAcquireSwapchainImage(color_swapchain_, &acquire_info,
++                                              &color_swapchain_image_index));
++
++  XrSwapchainImageWaitInfo wait_info = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
++  wait_info.timeout = XR_INFINITE_DURATION;
++  RETURN_IF_XR_FAILED(xrWaitSwapchainImage(color_swapchain_, &wait_info));
++
++  RETURN_IF_XR_FAILED(UpdateViewConfigurations());
++
++  const SwapChainInfo& swap_chain_info =
++      color_swapchain_images_[color_swapchain_image_index];
++  // TODO
++  (void)swap_chain_info;
++  //texture = swap_chain_info.d3d11_texture;
++  //mailbox_holder = swap_chain_info.mailbox_holder;
++
++  return XR_SUCCESS;
++}
+
++#endif
 
 XrResult OpenXrApiWrapper::UpdateViewConfigurations() {
   // While secondary views are only active when reported by the OpenXR runtime,
@@ -1008,6 +1229,9 @@ XrResult OpenXrApiWrapper::EndFrame() {
   DCHECK(HasColorSwapChain());
   DCHECK(HasSpace(XR_REFERENCE_SPACE_TYPE_LOCAL));
   DCHECK(HasFrameState());
+
++  DLOG(INFO) << "<<<<<<<<<<<<<<<<< EndFrame";
+
 
   XrSwapchainImageReleaseInfo release_info = {
       XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -1256,6 +1480,7 @@ std::vector<mojom::XRInputSourceStatePtr> OpenXrApiWrapper::GetInputState(
                                       GetPredictedDisplayTime());
 }
 
++#ifdef XR_USE_GRAPHICS_API_D3D11
 XrResult OpenXrApiWrapper::GetLuid(
     const OpenXrExtensionHelper& extension_helper,
     LUID& luid) const {
@@ -1276,6 +1501,7 @@ XrResult OpenXrApiWrapper::GetLuid(
 
   return XR_SUCCESS;
 }
++#endif
 
 void OpenXrApiWrapper::EnsureEventPolling() {
   // Events are usually processed at the beginning of a frame. When frames
